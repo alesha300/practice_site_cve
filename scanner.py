@@ -160,10 +160,13 @@ async def main() -> None:
     console.print()
     table = Table(title="Scan Summary", show_lines=True)
     table.add_column("Domain", style="cyan")
-    table.add_column("Open Ports", justify="center")
-    table.add_column("Subdomains", justify="center")
-    table.add_column("Dirs Found", justify="center")
-    table.add_column("Security", justify="center")
+    table.add_column("Ports", justify="center")
+    table.add_column("Subs", justify="center")
+    table.add_column("Dirs", justify="center")
+    table.add_column("Sec", justify="center")
+    table.add_column("TLS", justify="center")
+    table.add_column("JS Secrets", justify="center")
+    table.add_column("Redirect", justify="center")
     table.add_column("CVEs", justify="center")
     table.add_column("Report")
 
@@ -176,10 +179,13 @@ async def main() -> None:
         subs = res.get("subdomain_enum", {}).get("data", {}).get("total_live", "?")
         dirs_found = res.get("directory_bruteforce", {}).get("data", {}).get("total_found", "?")
         grade = res.get("security_headers_check", {}).get("data", {}).get("overall_grade", "?")
+        tls = res.get("tls_check", {}).get("data", {}).get("score", "?")
+        js_sec = res.get("js_analysis", {}).get("data", {}).get("secrets_count", 0)
+        redirect = "[red]YES[/red]" if res.get("open_redirect", {}).get("data", {}).get("vulnerable") else "No"
         cves = res.get("cve_lookup", {}).get("data", {}).get("total_cves", "?")
         crit = len(res.get("cve_lookup", {}).get("data", {}).get("by_severity", {}).get("CRITICAL", []))
         critical_count += crit
-        table.add_row(r["domain"], str(ports), str(subs), str(dirs_found), grade, str(cves), r["report"])
+        table.add_row(r["domain"], str(ports), str(subs), str(dirs_found), grade, str(tls), str(js_sec), redirect, str(cves), r["report"])
 
     console.print(table)
     console.print(
