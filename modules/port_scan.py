@@ -60,7 +60,24 @@ async def run(target: str) -> dict:
         [r for r in scan_results if r is not None],
         key=lambda x: x["port"],
     )
-    result["data"]["open_ports"] = open_ports
-    result["data"]["total_scanned"] = len(TOP_PORTS)
-    result["data"]["total_open"] = len(open_ports)
+
+    # False positive detection: if >80% ports appear open, likely a
+    # transparent proxy (Tor exit node) or firewall accepting all SYN.
+    total = len(TOP_PORTS)
+    if len(open_ports) > total * 0.8:
+        result["data"]["warning"] = (
+            f"All {len(open_ports)}/{total} ports appear open — likely a "
+            "false positive due to Tor exit node or transparent proxy. "
+            "Only ports with banners are reliable."
+        )
+        # Keep only ports that returned a banner (confirmed services)
+        confirmed = [p for p in open_ports if p["banner"]]
+        result["data"]["open_ports"] = confirmed
+        result["data"]["all_responded"] = len(open_ports)
+        result["data"]["total_open"] = len(confirmed)
+    else:
+        result["data"]["open_ports"] = open_ports
+        result["data"]["total_open"] = len(open_ports)
+
+    result["data"]["total_scanned"] = total
     return result

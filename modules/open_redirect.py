@@ -29,18 +29,26 @@ TEST_PAYLOADS = [
 ]
 
 
-def _is_redirected_to_payload(final_url: str, payload: str) -> bool:
-    """Check if the final URL is the payload or contains it."""
-    final_lower = final_url.lower()
-    return (
-        "evil.com" in final_lower
-        or final_url.startswith(payload.split("%")[0])
-    )
+def _is_redirected_to_payload(final_url: str, original_host: str) -> bool:
+    """Check if the final URL actually lands on evil.com (not just query param)."""
+    from urllib.parse import urlparse
+    parsed = urlparse(final_url)
+    final_host = (parsed.hostname or "").lower()
+    # True redirect: final HOST is evil.com, not just evil.com in query string
+    if "evil.com" in final_host:
+        return True
+    # Also check: redirect to different domain than original (excluding subdomains)
+    orig = original_host.lower().lstrip("www.")
+    fin = final_host.lstrip("www.")
+    if fin and fin != orig and not fin.endswith("." + orig):
+        return True
+    return False
 
 
 async def _test_param(
     session: aiohttp.ClientSession,
     base_url: str,
+    original_host: str,
     param: str,
     payload: str,
 ) -> dict | None:
@@ -56,7 +64,7 @@ async def _test_param(
             max_redirects=5,
         ) as resp:
             final = str(resp.url)
-            if _is_redirected_to_payload(final, payload):
+            if _is_redirected_to_payload(final, original_host):
                 return {
                     "param": param,
                     "payload": payload,
@@ -81,15 +89,17 @@ async def run(target: str) -> dict:
     # Semaphore to limit concurrent requests
     sem = asyncio.Semaphore(5)
 
-    async def test_with_sem(session, base_url, param, payload):
+    original_host = info["domain"]
+
+    async def test_with_sem(session, base_url, host, param, payload):
         async with sem:
-            return await _test_param(session, base_url, param, payload)
+            return await _test_param(session, base_url, host, param, payload)
 
     try:
         async with aiohttp.ClientSession() as session:
             # Test each param with first payload only initially
             tasks = [
-                test_with_sem(session, base_url, param, TEST_PAYLOADS[0])
+                test_with_sem(session, base_url, original_host, param, TEST_PAYLOADS[0])
                 for param in REDIRECT_PARAMS
             ]
             first_results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -102,7 +112,7 @@ async def run(target: str) -> dict:
                     # Found one — test more bypass payloads for this param
                     param = REDIRECT_PARAMS[i]
                     bypass_tasks = [
-                        test_with_sem(session, base_url, param, p)
+                        test_with_sem(session, base_url, original_host, param, p)
                         for p in TEST_PAYLOADS[1:]
                     ]
                     bypass_results = await asyncio.gather(*bypass_tasks, return_exceptions=True)

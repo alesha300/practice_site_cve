@@ -122,7 +122,12 @@ def _run_tls_analysis(domain: str, port: int) -> dict:
                     cipher = ssock.cipher()
                     if cipher:
                         data["negotiated_cipher"] = cipher[0]
-                        has_fs = any(k in cipher[0] for k in ("ECDHE", "DHE", "EDH"))
+                        tls_ver = ssock.version() or ""
+                        # TLS 1.3 always uses ECDHE (forward secrecy guaranteed)
+                        if "1.3" in tls_ver:
+                            has_fs = True
+                        else:
+                            has_fs = any(k in cipher[0] for k in ("ECDHE", "DHE", "EDH"))
                         data["forward_secrecy"] = has_fs
                         if not has_fs:
                             data["issues"].append("No forward secrecy (ECDHE/DHE not used)")
