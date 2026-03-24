@@ -1,5 +1,3 @@
-"""Markdown report generator."""
-
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -12,23 +10,15 @@ def generate(target: str, domain: str, results: dict) -> str:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
     lines.append(f"# Reconnaissance Report: {domain}\n")
-    lines.append(f"**Target:** {target}  ")
-    lines.append(f"**Date:** {now}  ")
-    lines.append(f"**Scanner:** WebRecon v1.0\n")
+    lines.append(f"**Target:** {target} | **Date:** {now} | **Scanner:** WebRecon v2.0 | **Modules:** 13\n")
     lines.append("---\n")
-
     # 1 — Basic Info
     if data := results.get("basic_info", {}).get("data", {}):
         lines.append("## 1. Basic Information\n")
         if ip := data.get("ip"):
             lines.append(f"**IP Address:** `{ip}`\n")
         if geo := data.get("geolocation"):
-            lines.append(
-                f"**Location:** {geo.get('city', '?')}, "
-                f"{geo.get('regionName', '?')}, {geo.get('country', '?')}  "
-            )
-            lines.append(f"**ISP:** {geo.get('isp', '?')}  ")
-            lines.append(f"**AS:** {geo.get('as', '?')}\n")
+            lines.append(f"**Location:** {geo.get('city','?')}, {geo.get('regionName','?')}, {geo.get('country','?')} | **ISP:** {geo.get('isp','?')} | **AS:** {geo.get('as','?')}\n")
         if dns := data.get("dns"):
             lines.append("### DNS Records\n")
             lines.append("| Type | Records |")
@@ -37,11 +27,9 @@ def generate(target: str, domain: str, results: dict) -> str:
                 lines.append(f"| {rtype} | {', '.join(records)} |")
             lines.append("")
         if whois_raw := data.get("whois"):
-            lines.append("### WHOIS (excerpt)\n")
-            lines.append("```")
-            lines.extend(whois_raw.split("\n")[:30])
+            lines.append("### WHOIS (excerpt)\n```")
+            lines.extend(whois_raw.split("\n")[:25])
             lines.append("```\n")
-
     # 2 — Subdomains
     if data := results.get("subdomain_enum", {}).get("data", {}):
         lines.append("## 2. Subdomain Enumeration\n")
@@ -53,10 +41,16 @@ def generate(target: str, domain: str, results: dict) -> str:
             for s in live:
                 lines.append(f"| {s['subdomain']} | {s['status']} | {s['scheme']} |")
             lines.append("")
-
-    # 3 — Fingerprint
+    # 3 — WAF Detection
+    if data := results.get("waf_detect", {}).get("data", {}):
+        lines.append("## 3. WAF / CDN Detection\n")
+        lines.append(f"**WAF present:** {'Yes' if data.get('waf_present') else 'No'}  ")
+        if detected := data.get("detected_waf"):
+            lines.append(f"**Detected:** {', '.join(detected)}  ")
+        lines.append(f"**Blocked trigger request:** {'Yes' if data.get('waf_blocked') else 'No'}\n")
+    # 4 — Fingerprint
     if data := results.get("fingerprint", {}).get("data", {}):
-        lines.append("## 3. Fingerprinting\n")
+        lines.append("## 4. Fingerprinting\n")
         if techs := data.get("technologies"):
             lines.append(f"**Technologies:** {', '.join(techs)}\n")
         if hdrs := data.get("headers"):
@@ -73,10 +67,9 @@ def generate(target: str, domain: str, results: dict) -> str:
                 if info.get("preview"):
                     lines.append(f"```\n{info['preview'][:200]}\n```")
             lines.append("")
-
     # 4 — Port Scan
     if data := results.get("port_scan", {}).get("data", {}):
-        lines.append("## 4. Port Scan\n")
+        lines.append("## 5. Port Scan\n")
         lines.append(f"**Scanned:** {data.get('total_scanned', 0)} ports  ")
         lines.append(f"**Open:** {data.get('total_open', 0)}\n")
         if ports := data.get("open_ports"):
@@ -86,10 +79,9 @@ def generate(target: str, domain: str, results: dict) -> str:
                 banner = p["banner"][:80].replace("|", "//") if p["banner"] else "-"
                 lines.append(f"| {p['port']} | {p['state']} | {banner} |")
             lines.append("")
-
     # 5 — Directory Bruteforce
     if data := results.get("directory_bruteforce", {}).get("data", {}):
-        lines.append("## 5. Directory Bruteforce\n")
+        lines.append("## 6. Directory Bruteforce\n")
         lines.append(f"**Checked:** {data.get('total_checked', 0)} paths  ")
         lines.append(f"**Found:** {data.get('total_found', 0)}\n")
         if found := data.get("found"):
@@ -99,10 +91,36 @@ def generate(target: str, domain: str, results: dict) -> str:
                 redir = f["redirect"][:50] if f["redirect"] else "-"
                 lines.append(f"| {f['path']} | {f['status']} | {f['size']} | {redir} |")
             lines.append("")
-
-    # 6 — Security Headers
+    # 7 — HTTP Methods
+    if data := results.get("http_methods", {}).get("data", {}):
+        lines.append("## 7. HTTP Methods\n")
+        if allowed := data.get("allowed_methods"):
+            lines.append(f"**Allowed:** {', '.join(allowed)}  ")
+        if danger := data.get("dangerous"):
+            lines.append(f"**Dangerous:** {', '.join(danger)}  ")
+        lines.append(f"**Grade:** {data.get('grade', '?')} — {data.get('note', '')}\n")
+    # 8 — CORS
+    if data := results.get("cors_check", {}).get("data", {}):
+        lines.append("## 8. CORS Configuration\n")
+        lines.append(f"**Grade:** {data.get('grade', '?')} — {data.get('note', '')}\n")
+        if issues := data.get("issues"):
+            for issue in issues:
+                lines.append(f"- {issue}")
+            lines.append("")
+    # 9 — Cookie Security
+    if data := results.get("cookie_analysis", {}).get("data", {}):
+        lines.append("## 9. Cookie Security\n")
+        lines.append(f"**Total cookies:** {data.get('total', 0)}  ")
+        lines.append(f"**Note:** {data.get('note', '-')}\n")
+        if cookies := data.get("cookies"):
+            lines.append("| Name | Secure | HttpOnly | SameSite | Grade | Issues |")
+            lines.append("|------|--------|----------|----------|-------|--------|")
+            for c in cookies:
+                iss = "; ".join(c["issues"]) or "None"
+                lines.append(f"| {c['name'][:30]} | {c['secure']} | {c['httponly']} | {c['samesite']} | {c['grade']} | {iss} |")
+    # 10 — Security Headers
     if data := results.get("security_headers_check", {}).get("data", {}):
-        lines.append("## 6. Security Headers\n")
+        lines.append("## 10. Security Headers\n")
         lines.append(f"**Overall grade:** {data.get('overall_grade', '?')} ({data.get('score', '?')})\n")
         if hdrs := data.get("headers"):
             lines.append("| Header | Grade | Present | Note |")
@@ -115,20 +133,36 @@ def generate(target: str, domain: str, results: dict) -> str:
             lines.append("### SSL Certificate\n")
             if ssl_info.get("valid"):
                 iss = ssl_info.get("issuer", {}).get("organizationName", "?")
-                lines.append(f"**Valid:** Yes  ")
-                lines.append(f"**Issuer:** {iss}  ")
-                lines.append(f"**Expires:** {ssl_info.get('not_after', '?')}  ")
-                lines.append(f"**Days remaining:** {ssl_info.get('days_remaining', '?')}  ")
-                lines.append(f"**TLS Version:** {ssl_info.get('version', '?')}\n")
+                lines.append(f"Valid: Yes | Issuer: {iss} | Expires: {ssl_info.get('not_after', '?')} | Days: {ssl_info.get('days_remaining', '?')} | TLS: {ssl_info.get('version', '?')}\n")
             else:
                 lines.append("**Valid:** No\n")
             for err in ssl_info.get("errors", []):
                 lines.append(f"- WARNING: {err}")
-            lines.append("")
-
-    # 7 — CVE Lookup
+    # 11 — Email Security
+    if data := results.get("email_security", {}).get("data", {}):
+        lines.append("## 11. Email Security\n")
+        for check in ("spf", "dmarc"):
+            if info := data.get(check):
+                status = "Present" if info.get("present") else "Missing"
+                lines.append(f"**{check.upper()}:** {status} (Grade: {info.get('grade', '?')}) — {info.get('note', '')}")
+                if info.get("value"):
+                    lines.append(f"```\n{info['value'][:200]}\n```")
+        if dkim := data.get("dkim"):
+            lines.append(f"**DKIM:** {'Found' if dkim.get('found') else 'Not found'} (Grade: {dkim.get('grade', '?')}) — {dkim.get('note', '')}\n")
+    # 12 — Wayback Machine
+    if data := results.get("wayback", {}).get("data", {}):
+        lines.append("## 12. Wayback Machine\n")
+        lines.append(f"**Historical URLs found:** {data.get('total_urls', 0)}  ")
+        lines.append(f"**Interesting:** {data.get('interesting_count', 0)}\n")
+        if categorized := data.get("categorized"):
+            for cat, urls in categorized.items():
+                lines.append(f"### {cat.title()} ({len(urls)})\n")
+                for u in urls[:10]:
+                    lines.append(f"- {u}")
+                lines.append("")
+    # 13 — CVE Lookup
     if data := results.get("cve_lookup", {}).get("data", {}):
-        lines.append("## 7. CVE Lookup\n")
+        lines.append("## 13. CVE Lookup\n")
         lines.append(f"**Total CVEs found:** {data.get('total_cves', 0)}\n")
         if by_sev := data.get("by_severity"):
             for sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
